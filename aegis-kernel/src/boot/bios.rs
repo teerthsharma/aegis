@@ -62,14 +62,18 @@ impl BootInfo {
 
     /// Access the raw multiboot information.
     fn raw(&self) -> Option<BootInformation> {
-        unsafe { multiboot2::load(self.multiboot_start as *const BootInformationHeader).ok() }
+        unsafe { multiboot2::load(self.multiboot_start as usize).ok() }
     }
     
-    pub fn memory_map(&self) -> impl Iterator<Item = MemoryRegion> + '_ {
-         self.raw().into_iter().flat_map(|info| {
-            info.memory_map_tag().into_iter().flat_map(|tag| {
-                tag.memory_areas().map(|area| {
-                    MemoryRegion {
+    /// Iterate over the memory map using a callback.
+    /// This avoids returning complex iterators with lifetimes.
+    pub fn walk_memory_map<F>(&self, mut f: F) 
+    where F: FnMut(MemoryRegion)
+    {
+         if let Some(info) = self.raw() {
+            if let Some(tag) = info.memory_map_tag() {
+                for area in tag.memory_areas() {
+                    f(MemoryRegion {
                         start: area.start_address(),
                         end: area.end_address(),
                         kind: match area.typ() {
@@ -79,10 +83,10 @@ impl BootInfo {
                              multiboot2::MemoryAreaType::Nvs => MemoryRegionKind::Reserved,
                              _ => MemoryRegionKind::Unknown,
                         }
-                    }
-                })
-            })
-        })
+                    });
+                }
+            }
+         }
     }
 
     pub fn framebuffer(&self) -> Option<Framebuffer> {

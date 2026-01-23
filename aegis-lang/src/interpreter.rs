@@ -734,9 +734,10 @@ impl Interpreter {
                  _ => return Err(format!("Symbol '{}' not found in ml", symbol)),
             };
         } else {
-            self.variables.insert(String::from("MLP"), Value::NativeFn(NativeFunction::MlpNew));
+             self.variables.insert(String::from("MLP"), Value::NativeFn(NativeFunction::MlpNew));
             self.variables.insert(String::from("KMeans"), Value::NativeFn(NativeFunction::KMeansNew));
             self.variables.insert(String::from("Conv2D"), Value::NativeFn(NativeFunction::Conv2DNew));
+            self.variables.insert(String::from("Ml"), Value::Module(String::from("Ml")));
         }
         Ok(Value::Unit)
     }
@@ -748,25 +749,6 @@ impl Interpreter {
                   _ => return Err(format!("Symbol '{}' not found in Seal", symbol)),
              };
          } else {
-             // Expose 'Seal' object or functions?
-             // User wants "Seal.train(...)".
-             // If they do `import Seal`, we can add a `Seal` object to variables or just `train` if they used `from Seal import train`.
-             // But to support `Seal.train`, `Seal` needs to be an object or a struct in variables.
-             // Simplest way: Create a special Value::SealModule or just put `train` in a struct/class-like Value.
-             // Let's make `Seal` a Value::Object or similar that has `train` method.
-             // OR, cleaner: NativeFn can be called as a method? No.
-             // Let's just expose `Seal` as a Class/Object that has static methods.
-             
-             // Hack for now: Insert a "Seal" variable that acts as a namespace, 
-             // but our Value enum doesn't support Modules well.
-             // We'll treat `Seal` import by inserting `train` globally if they do `import Seal`? 
-             // No, that breaks `Seal.train`.
-             // We can insert a Value::Str("Seal") or something dummy, and handle `FieldAccess` on it?
-             // Better: Add `Value::Module(String)`
-             
-             // For this step, I'll assume we can't easily change Value enum across files heavily (already did AST).
-             // Let's add `Value::Module(String)` is safe if I add it to `Value` enum definition in interpreter.rs.
-             
              self.variables.insert(String::from("Seal"), Value::Module(String::from("Seal")));
          }
          Ok(Value::Unit)
@@ -1036,10 +1018,10 @@ impl Interpreter {
     fn execute_native_fn(
         &mut self,
         func: NativeFunction,
-        args: &Vec<CallArg>,
+        args: &[CallArg],
     ) -> Result<Value, String> {
         // Helper to get first arg as f64
-        let mut get_f64 = |args: &Vec<CallArg>| -> Result<f64, String> {
+        let mut get_f64 = |args: &[CallArg]| -> Result<f64, String> {
             if let Some(CallArg::Positional(Expr::Num(n))) = args.first() {
                 Ok(n.as_f64())
             } else if let Some(CallArg::Positional(expr)) = args.first() {
@@ -1095,7 +1077,7 @@ impl Interpreter {
         }
     }
 
-    fn execute_seal_train(&mut self, args: &Vec<CallArg>) -> Result<Value, String> {
+    fn execute_seal_train(&mut self, args: &[CallArg]) -> Result<Value, String> {
         // Seal.train(model, data, targets)
         if args.len() < 3 {
             return Err(String::from("Seal.train requires model, data, and targets"));
@@ -1180,11 +1162,16 @@ impl Interpreter {
         method: &String,
         args: &[CallArg],
     ) -> Result<Value, String> {
+        // DEBUG
+        println!("Method call: {}.{}", object_name, method);
+
         let val = if let Some(v) = self.variables.get(object_name) {
             v.clone()
         } else {
             return Err(format!("Object '{}' not found", object_name));
         };
+
+        println!("Object Type: {:?}", val);
 
         match val {
             Value::List(mut list) => {
@@ -1244,7 +1231,20 @@ impl Interpreter {
                          // Mock training
                          Ok(Value::Num(0.1))
                      }
+                     "predict" => {
+                         // Mock inference
+                         Ok(Value::Num(0.0))
+                     }
                      _ => Err(format!("Method '{}' not found on MLP", method)),
+                 }
+            }
+            Value::Module(mod_name) => {
+                 match (mod_name.as_str(), method.as_str()) {
+                     ("Ml", "MLP") => self.execute_native_fn(NativeFunction::MlpNew, args),
+                     ("Ml", "KMeans") => self.execute_native_fn(NativeFunction::KMeansNew, args),
+                     ("Ml", "Conv2D") => self.execute_native_fn(NativeFunction::Conv2DNew, args),
+                     ("Seal", "train") => self.execute_native_fn(NativeFunction::SealTrain, args),
+                     _ => Err(format!("Method '{}' not found in module '{}'", method, mod_name)),
                  }
             }
             _ => Err("Type cannot handle method calls".to_string()),
@@ -1282,6 +1282,9 @@ impl Interpreter {
         } else if let Some(Value::Module(name)) = self.variables.get(object) {
              match (name.as_str(), field.as_str()) {
                  ("Seal", "train") => Ok(Value::NativeFn(NativeFunction::SealTrain)),
+                 ("Ml", "MLP") => Ok(Value::NativeFn(NativeFunction::MlpNew)),
+                 ("Ml", "KMeans") => Ok(Value::NativeFn(NativeFunction::KMeansNew)),
+                 ("Ml", "Conv2D") => Ok(Value::NativeFn(NativeFunction::Conv2DNew)),
                  _ => Ok(Value::Unit),
              }
         } else {

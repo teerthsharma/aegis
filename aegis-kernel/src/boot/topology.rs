@@ -37,10 +37,26 @@ impl HardwareTopology {
     }
 
     /// Perform a "Bio-Scan" to populate the topology from boot info.
-    /// This is a placeholder for the actual discovery logic.
-    pub fn bio_scan() -> Self {
-        // TODO: Ingest actual hardware state.
-        // For now, return a safe default (Single-Celled Organism).
-        Self::new()
+    pub fn bio_scan(boot_info: &super::bios::BootInfo) -> Self {
+        let mut mem_total = 0;
+        // Calculate total memory
+        boot_info.walk_memory_map(|region| {
+            if region.kind == super::bios::MemoryRegionKind::Usable {
+                mem_total += region.end - region.start;
+            }
+        });
+        
+        let mut caps = IoCaps::default();
+        if boot_info.framebuffer().is_some() {
+            caps.has_framebuffer = true;
+        }
+
+        Self {
+            cpu_cores: 1, // TODO: Parse MADT/ACPI for actual core count
+            numa_nodes: 1, // TODO: Parse SRAT
+            total_memory: mem_total,
+            io_capabilities: caps,
+            cache_groups: Vec::new(),
+        }
     }
 }

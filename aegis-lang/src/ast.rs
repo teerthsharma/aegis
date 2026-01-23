@@ -289,9 +289,13 @@ pub enum Statement {
     Fn(FnDecl),
     Return(ReturnStmt),
     Break(BreakStmt),
-    Continue(ContinueStmt),
-
-    /// Continue statement
+    
+    // Continue statement - already defined above? No, I see it twice in the error log.
+    // The previous block end was:
+    // Break(BreakStmt),
+    // Continue(ContinueStmt),
+    // + Continue(ContinueStmt),
+    
     Continue(ContinueStmt),
 
     /// Expression statement (method call, assignment, etc.)
