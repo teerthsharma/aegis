@@ -2,442 +2,86 @@
 //! AEGIS Linear Algebra Library
 //! ═══════════════════════════════════════════════════════════════════════════════
 //!
-//! Complete linear algebra primitives for ML algorithms, optimized for no_std.
+//! Complete linear algebra primitives for ML algorithms.
+//! Now powered by dynamic Tensors (Rc<RefCell> backend).
 //!
 //! ═══════════════════════════════════════════════════════════════════════════════
 
 #![allow(dead_code)]
 
-use libm::{exp, fabs, sqrt};
+#[cfg(feature = "alloc")]
+use alloc::vec;
+#[cfg(feature = "alloc")]
+use alloc::vec::Vec;
 
-/// Maximum vector/matrix size for stack allocation
-pub const MAX_DIM: usize = 64;
-pub const MAX_MATRIX: usize = 32;
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Vector Operations
-// ═══════════════════════════════════════════════════════════════════════════════
+#[cfg(not(feature = "std"))]
+use libm::{exp, fabs, sqrt, log, pow};
+#[cfg(feature = "std")]
+use std::f64;
 
-/// Dense vector with fixed maximum size
-#[derive(Debug, Clone, Copy)]
-pub struct Vector {
-    pub data: [f64; MAX_DIM],
-    pub len: usize,
-}
-
-impl Vector {
-    pub const fn zeros(len: usize) -> Self {
-        Self {
-            data: [0.0; MAX_DIM],
-            len,
-        }
-    }
-
-    pub fn from_slice(slice: &[f64]) -> Self {
-        let mut v = Self::zeros(slice.len().min(MAX_DIM));
-        for (i, &val) in slice.iter().enumerate().take(MAX_DIM) {
-            v.data[i] = val;
-        }
-        v
-    }
-
-    /// Dot product
-    pub fn dot(&self, other: &Self) -> f64 {
-        let n = self.len.min(other.len);
-        let mut sum = 0.0;
-        for i in 0..n {
-            sum += self.data[i] * other.data[i];
-        }
-        sum
-    }
-
-    /// Euclidean norm (L2)
-    pub fn norm(&self) -> f64 {
-        sqrt(self.dot(self))
-    }
-
-    /// L1 norm (Manhattan)
-    pub fn norm_l1(&self) -> f64 {
-        let mut sum = 0.0;
-        for i in 0..self.len {
-            sum += fabs(self.data[i]);
-        }
-        sum
-    }
-
-    /// Normalize to unit length
-    pub fn normalize(&self) -> Self {
-        let n = self.norm();
-        if n < 1e-10 {
-            return *self;
-        }
-        self.scale(1.0 / n)
-    }
-
-    /// Scalar multiplication
-    pub fn scale(&self, s: f64) -> Self {
-        let mut result = *self;
-        for i in 0..self.len {
-            result.data[i] *= s;
-        }
-        result
-    }
-
-    /// Vector addition
-    pub fn add(&self, other: &Self) -> Self {
-        let n = self.len.min(other.len);
-        let mut result = Self::zeros(n);
-        for i in 0..n {
-            result.data[i] = self.data[i] + other.data[i];
-        }
-        result
-    }
-
-    /// Vector subtraction
-    pub fn sub(&self, other: &Self) -> Self {
-        let n = self.len.min(other.len);
-        let mut result = Self::zeros(n);
-        for i in 0..n {
-            result.data[i] = self.data[i] - other.data[i];
-        }
-        result
-    }
-
-    /// Element-wise multiplication (Hadamard product)
-    pub fn hadamard(&self, other: &Self) -> Self {
-        let n = self.len.min(other.len);
-        let mut result = Self::zeros(n);
-        for i in 0..n {
-            result.data[i] = self.data[i] * other.data[i];
-        }
-        result
-    }
-
-    /// Euclidean distance to another vector
-    pub fn distance(&self, other: &Self) -> f64 {
-        self.sub(other).norm()
-    }
-
-    /// Cosine similarity
-    pub fn cosine_similarity(&self, other: &Self) -> f64 {
-        let na = self.norm();
-        let nb = other.norm();
-        if na < 1e-10 || nb < 1e-10 {
-            return 0.0;
-        }
-        self.dot(other) / (na * nb)
-    }
-
-    /// Sum of elements
-    pub fn sum(&self) -> f64 {
-        let mut s = 0.0;
-        for i in 0..self.len {
-            s += self.data[i];
-        }
-        s
-    }
-
-    /// Mean of elements
-    pub fn mean(&self) -> f64 {
-        if self.len == 0 {
-            return 0.0;
-        }
-        self.sum() / self.len as f64
-    }
-
-    /// Variance
-    pub fn variance(&self) -> f64 {
-        if self.len == 0 {
-            return 0.0;
-        }
-        let m = self.mean();
-        let mut sum = 0.0;
-        for i in 0..self.len {
-            let diff = self.data[i] - m;
-            sum += diff * diff;
-        }
-        sum / self.len as f64
-    }
-
-    /// Standard deviation
-    pub fn std(&self) -> f64 {
-        sqrt(self.variance())
-    }
-
-    /// Max element
-    pub fn max(&self) -> f64 {
-        let mut m = f64::NEG_INFINITY;
-        for i in 0..self.len {
-            if self.data[i] > m {
-                m = self.data[i];
-            }
-        }
-        m
-    }
-
-    /// Min element
-    pub fn min(&self) -> f64 {
-        let mut m = f64::INFINITY;
-        for i in 0..self.len {
-            if self.data[i] < m {
-                m = self.data[i];
-            }
-        }
-        m
-    }
-
-    /// Argmax
-    pub fn argmax(&self) -> usize {
-        let mut idx = 0;
-        let mut m = f64::NEG_INFINITY;
-        for i in 0..self.len {
-            if self.data[i] > m {
-                m = self.data[i];
-                idx = i;
-            }
-        }
-        idx
-    }
-
-    /// Apply ReLU activation
-    pub fn relu(&self) -> Self {
-        let mut result = *self;
-        for i in 0..self.len {
-            if result.data[i] < 0.0 {
-                result.data[i] = 0.0;
-            }
-        }
-        result
-    }
-
-    /// Apply Sigmoid activation
-    pub fn sigmoid(&self) -> Self {
-        let mut result = *self;
-        for i in 0..self.len {
-            result.data[i] = 1.0 / (1.0 + exp(-result.data[i]));
-        }
-        result
-    }
-
-    /// Softmax (numerically stable)
-    pub fn softmax(&self) -> Self {
-        let max_val = self.max();
-        let mut result = *self;
-        let mut sum = 0.0;
-
-        for i in 0..self.len {
-            result.data[i] = exp(result.data[i] - max_val);
-            sum += result.data[i];
-        }
-
-        for i in 0..self.len {
-            result.data[i] /= sum;
-        }
-        result
-    }
-}
-
-impl Default for Vector {
-    fn default() -> Self {
-        Self::zeros(0)
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// Matrix Operations
-// ═══════════════════════════════════════════════════════════════════════════════
-
-/// Dense matrix with fixed maximum size
-#[derive(Debug, Clone, Copy)]
-pub struct Matrix {
-    pub data: [[f64; MAX_MATRIX]; MAX_MATRIX],
-    pub rows: usize,
-    pub cols: usize,
-}
-
-impl Matrix {
-    pub const fn zeros(rows: usize, cols: usize) -> Self {
-        Self {
-            data: [[0.0; MAX_MATRIX]; MAX_MATRIX],
-            rows,
-            cols,
-        }
-    }
-
-    pub fn identity(n: usize) -> Self {
-        let mut m = Self::zeros(n, n);
-        for i in 0..n.min(MAX_MATRIX) {
-            m.data[i][i] = 1.0;
-        }
-        m
-    }
-
-    /// Matrix-vector multiplication
-    pub fn matvec(&self, v: &Vector) -> Vector {
-        let mut result = Vector::zeros(self.rows);
-        for i in 0..self.rows {
-            let mut sum = 0.0;
-            for j in 0..self.cols.min(v.len) {
-                sum += self.data[i][j] * v.data[j];
-            }
-            result.data[i] = sum;
-        }
-        result
-    }
-
-    /// Matrix-matrix multiplication
-    pub fn matmul(&self, other: &Matrix) -> Matrix {
-        let mut result = Matrix::zeros(self.rows, other.cols);
-        for i in 0..self.rows {
-            for j in 0..other.cols {
-                let mut sum = 0.0;
-                for k in 0..self.cols {
-                    sum += self.data[i][k] * other.data[k][j];
-                }
-                result.data[i][j] = sum;
-            }
-        }
-        result
-    }
-
-    /// Transpose
-    pub fn transpose(&self) -> Matrix {
-        let mut result = Matrix::zeros(self.cols, self.rows);
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                result.data[j][i] = self.data[i][j];
-            }
-        }
-        result
-    }
-
-    /// Outer product of two vectors
-    pub fn outer(a: &Vector, b: &Vector) -> Matrix {
-        let mut result = Matrix::zeros(a.len, b.len);
-        for i in 0..a.len {
-            for j in 0..b.len {
-                result.data[i][j] = a.data[i] * b.data[j];
-            }
-        }
-        result
-    }
-
-    /// Add matrices
-    pub fn add(&self, other: &Matrix) -> Matrix {
-        let rows = self.rows.min(other.rows);
-        let cols = self.cols.min(other.cols);
-        let mut result = Matrix::zeros(rows, cols);
-        for i in 0..rows {
-            for j in 0..cols {
-                result.data[i][j] = self.data[i][j] + other.data[i][j];
-            }
-        }
-        result
-    }
-
-    /// Subtract matrices
-    pub fn sub(&self, other: &Matrix) -> Matrix {
-        let rows = self.rows.min(other.rows);
-        let cols = self.cols.min(other.cols);
-        let mut result = Matrix::zeros(rows, cols);
-        for i in 0..rows {
-            for j in 0..cols {
-                result.data[i][j] = self.data[i][j] - other.data[i][j];
-            }
-        }
-        result
-    }
-
-    /// Scale by scalar
-    pub fn scale(&self, s: f64) -> Matrix {
-        let mut result = *self;
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                result.data[i][j] *= s;
-            }
-        }
-        result
-    }
-
-    /// Frobenius norm
-    pub fn frobenius_norm(&self) -> f64 {
-        let mut sum = 0.0;
-        for i in 0..self.rows {
-            for j in 0..self.cols {
-                sum += self.data[i][j] * self.data[i][j];
-            }
-        }
-        sqrt(sum)
-    }
-
-    /// Get column as vector
-    pub fn get_col(&self, j: usize) -> Vector {
-        let mut v = Vector::zeros(self.rows);
-        for i in 0..self.rows {
-            v.data[i] = self.data[i][j];
-        }
-        v
-    }
-
-    /// Get row as vector
-    pub fn get_row(&self, i: usize) -> Vector {
-        let mut v = Vector::zeros(self.cols);
-        for j in 0..self.cols {
-            v.data[j] = self.data[i][j];
-        }
-        v
-    }
-}
-
-impl Default for Matrix {
-    fn default() -> Self {
-        Self::zeros(0, 0)
-    }
-}
+use super::tensor::Tensor;
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Loss Functions
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Mean Squared Error
-pub fn mse(y_true: &Vector, y_pred: &Vector) -> f64 {
+pub fn mse(y_true: &Tensor, y_pred: &Tensor) -> f64 {
     let diff = y_true.sub(y_pred);
-    diff.dot(&diff) / y_true.len as f64
+    diff.mul(&diff).sum() / y_true.shape.iter().product::<usize>() as f64
 }
 
 /// Mean Absolute Error
-pub fn mae(y_true: &Vector, y_pred: &Vector) -> f64 {
+pub fn mae(y_true: &Tensor, y_pred: &Tensor) -> f64 {
     let mut sum = 0.0;
-    let n = y_true.len.min(y_pred.len);
+    let true_data = y_true.data.borrow();
+    let pred_data = y_pred.data.borrow();
+    let n = true_data.len().min(pred_data.len());
+    
     for i in 0..n {
-        sum += fabs(y_true.data[i] - y_pred.data[i]);
+        sum += fabs(true_data[i] - pred_data[i]);
     }
     sum / n as f64
 }
 
 /// Root Mean Squared Error
-pub fn rmse(y_true: &Vector, y_pred: &Vector) -> f64 {
+pub fn rmse(y_true: &Tensor, y_pred: &Tensor) -> f64 {
     sqrt(mse(y_true, y_pred))
 }
 
 /// Binary Cross-Entropy
-pub fn binary_cross_entropy(y_true: &Vector, y_pred: &Vector) -> f64 {
+pub fn binary_cross_entropy(y_true: &Tensor, y_pred: &Tensor) -> f64 {
     let mut sum = 0.0;
-    let n = y_true.len.min(y_pred.len);
+    let true_data = y_true.data.borrow();
+    let pred_data = y_pred.data.borrow();
+    let n = true_data.len().min(pred_data.len());
+    
     for i in 0..n {
-        let p = y_pred.data[i].clamp(1e-7, 1.0 - 1e-7);
-        let y = y_true.data[i];
-        sum -= y * libm::log(p) + (1.0 - y) * libm::log(1.0 - p);
+        let p = pred_data[i].clamp(1e-7, 1.0 - 1e-7);
+        let y = true_data[i];
+        
+        #[cfg(not(feature = "std"))]
+        {
+             sum -= y * log(p) + (1.0 - y) * log(1.0 - p);
+        }
+        #[cfg(feature = "std")]
+        {
+             sum -= y * p.ln() + (1.0 - y) * (1.0 - p).ln();
+        }
     }
     sum / n as f64
 }
 
 /// Hinge Loss (for SVM)
-pub fn hinge_loss(y_true: &Vector, y_pred: &Vector) -> f64 {
+pub fn hinge_loss(y_true: &Tensor, y_pred: &Tensor) -> f64 {
     let mut sum = 0.0;
-    let n = y_true.len.min(y_pred.len);
+    let true_data = y_true.data.borrow();
+    let pred_data = y_pred.data.borrow();
+    let n = true_data.len().min(pred_data.len());
+    
     for i in 0..n {
-        let margin = 1.0 - y_true.data[i] * y_pred.data[i];
+        let margin = 1.0 - true_data[i] * pred_data[i];
         if margin > 0.0 {
             sum += margin;
         }
@@ -450,38 +94,53 @@ pub fn hinge_loss(y_true: &Vector, y_pred: &Vector) -> f64 {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Numerical gradient of f at x
-pub fn numerical_gradient<F>(f: F, x: &Vector, epsilon: f64) -> Vector
+pub fn numerical_gradient<F>(f: F, x: &Tensor, epsilon: f64) -> Tensor
 where
-    F: Fn(&Vector) -> f64,
+    F: Fn(&Tensor) -> f64,
 {
-    let mut grad = Vector::zeros(x.len);
+    // Clone structure
+    let grad = Tensor::zeros(&x.shape);
+    let n = x.shape.iter().product();
+    
+    let mut grad_data = grad.data.borrow_mut();
+    
+    // We need to mutate x temporarily, but x is shared via Rc? 
+    // Wait, Tensor has Rc, so cloning Tensor shares data. 
+    // We need a deep copy to mutate independent probe.
+    
+    // Deep copy x
+    let mut x_plus = Tensor::new(&x.data.borrow(), &x.shape);
+    let mut x_minus = Tensor::new(&x.data.borrow(), &x.shape);
 
-    for i in 0..x.len {
-        let mut x_plus = *x;
-        let mut x_minus = *x;
-        x_plus.data[i] += epsilon;
-        x_minus.data[i] -= epsilon;
-        grad.data[i] = (f(&x_plus) - f(&x_minus)) / (2.0 * epsilon);
-    }
-
-    grad
-}
-
-/// MSE gradient for linear model
-pub fn mse_gradient(x_mat: &Matrix, y: &Vector, weights: &Vector) -> Vector {
-    let n = x_mat.rows as f64;
-    let mut grad = Vector::zeros(weights.len);
-
-    for i in 0..x_mat.rows {
-        let x_i = x_mat.get_row(i);
-        let pred = x_i.dot(weights);
-        let error = pred - y.data[i];
-
-        for j in 0..weights.len {
-            grad.data[j] += 2.0 * error * x_i.data[j] / n;
+    {
+        let mut xp_data = x_plus.data.borrow_mut();
+        let mut xm_data = x_minus.data.borrow_mut();
+        
+        // This is inefficient but correct logic for numerical grad
+        // Actually, we can just mutate one element at a time
+        // But we need to call f(&x_plus), so we need the struct.
+        // We cannot hold borrow_mut while calling f if f uses x_plus? 
+        // f takes &Tensor.
+        
+        // Let's iterate
+        drop(xp_data);
+        drop(xm_data);
+        
+        for i in 0..n {
+             let original = x.data.borrow()[i];
+             
+             x_plus.data.borrow_mut()[i] = original + epsilon;
+             x_minus.data.borrow_mut()[i] = original - epsilon;
+             
+             grad_data[i] = (f(&x_plus) - f(&x_minus)) / (2.0 * epsilon);
+             
+             // Restore (though we just overwrite next loop, but for last iter... actually we reuse x_plus/x_minus)
+             x_plus.data.borrow_mut()[i] = original;
+             x_minus.data.borrow_mut()[i] = original;
         }
     }
 
+    drop(grad_data);
     grad
 }
 
@@ -490,21 +149,30 @@ pub fn mse_gradient(x_mat: &Matrix, y: &Vector, weights: &Vector) -> Vector {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /// Euclidean distance
-pub fn euclidean_distance(a: &Vector, b: &Vector) -> f64 {
-    a.distance(b)
+pub fn euclidean_distance(a: &Tensor, b: &Tensor) -> f64 {
+    let diff = a.sub(b);
+    sqrt(diff.mul(&diff).sum())
 }
 
 /// Manhattan distance (L1)
-pub fn manhattan_distance(a: &Vector, b: &Vector) -> f64 {
-    a.sub(b).norm_l1()
+pub fn manhattan_distance(a: &Tensor, b: &Tensor) -> f64 {
+    let mut sum = 0.0;
+    // Tensor doesn't have L1 norm built-in, do manual
+    let diff_data = a.sub(b).data;
+    let data = diff_data.borrow();
+    for &val in data.iter() {
+        sum += fabs(val);
+    }
+    sum
 }
 
 /// Chebyshev distance (L∞)
-pub fn chebyshev_distance(a: &Vector, b: &Vector) -> f64 {
+pub fn chebyshev_distance(a: &Tensor, b: &Tensor) -> f64 {
     let diff = a.sub(b);
+    let data = diff.data.borrow();
     let mut max = 0.0;
-    for i in 0..diff.len {
-        let abs_val = fabs(diff.data[i]);
+    for &val in data.iter() {
+        let abs_val = fabs(val);
         if abs_val > max {
             max = abs_val;
         }
@@ -513,51 +181,29 @@ pub fn chebyshev_distance(a: &Vector, b: &Vector) -> f64 {
 }
 
 /// RBF kernel value
-pub fn rbf_kernel(a: &Vector, b: &Vector, gamma: f64) -> f64 {
-    let dist_sq = a.sub(b).dot(&a.sub(b));
+pub fn rbf_kernel(a: &Tensor, b: &Tensor, gamma: f64) -> f64 {
+    let dist = a.sub(b);
+    let dist_sq = dist.mul(&dist).sum();
     exp(-gamma * dist_sq)
 }
 
-// ═══════════════════════════════════════════════════════════════════════════════
-// Unit Tests
-// ═══════════════════════════════════════════════════════════════════════════════
+fn fabs(x: f64) -> f64 {
+    #[cfg(feature = "std")]
+    return x.abs();
+    #[cfg(not(feature = "std"))]
+    return libm::fabs(x);
+}
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+fn sqrt(x: f64) -> f64 {
+    #[cfg(feature = "std")]
+    return x.sqrt();
+    #[cfg(not(feature = "std"))]
+    return libm::sqrt(x);
+}
 
-    #[test]
-    fn test_vector_dot() {
-        let a = Vector::from_slice(&[1.0, 2.0, 3.0]);
-        let b = Vector::from_slice(&[4.0, 5.0, 6.0]);
-        assert!((a.dot(&b) - 32.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_vector_norm() {
-        let v = Vector::from_slice(&[3.0, 4.0]);
-        assert!((v.norm() - 5.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_matrix_matvec() {
-        let mut m = Matrix::zeros(2, 2);
-        m.data[0][0] = 1.0;
-        m.data[0][1] = 2.0;
-        m.data[1][0] = 3.0;
-        m.data[1][1] = 4.0;
-
-        let v = Vector::from_slice(&[1.0, 1.0]);
-        let result = m.matvec(&v);
-
-        assert!((result.data[0] - 3.0).abs() < 1e-10);
-        assert!((result.data[1] - 7.0).abs() < 1e-10);
-    }
-
-    #[test]
-    fn test_softmax() {
-        let v = Vector::from_slice(&[1.0, 2.0, 3.0]);
-        let s = v.softmax();
-        assert!((s.sum() - 1.0).abs() < 1e-10);
-    }
+fn exp(x: f64) -> f64 {
+    #[cfg(feature = "std")]
+    return x.exp();
+    #[cfg(not(feature = "std"))]
+    return libm::exp(x);
 }

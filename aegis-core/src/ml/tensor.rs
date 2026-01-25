@@ -7,9 +7,19 @@
 //!
 //! ═══════════════════════════════════════════════════════════════════════════════
 
+#[cfg(feature = "alloc")]
 use alloc::rc::Rc;
+#[cfg(feature = "alloc")]
 use alloc::vec::Vec;
+#[cfg(feature = "alloc")]
 use alloc::vec;
+#[cfg(not(feature = "alloc"))]
+use std::rc::Rc;
+#[cfg(not(feature = "alloc"))]
+use std::vec::Vec;
+#[cfg(not(feature = "alloc"))]
+use std::vec;
+
 use core::cell::RefCell;
 use libm::{exp, sqrt};
 
@@ -66,7 +76,7 @@ impl Tensor {
         
         // Simple LCG for deterministic randomness in no_std
         let mut rng = 42u64;
-        let mut data = Vec::with_capacity(total_size);
+        let mut data: Vec<f64> = Vec::with_capacity(total_size);
         
         for _ in 0..total_size {
             rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1);
@@ -104,11 +114,6 @@ impl Tensor {
         let total_size: usize = self.shape.iter().product();
         let mut new_data = Vec::with_capacity(total_size);
         let data = self.data.borrow();
-        
-        // This is a naive implementation that doesn't respect complex strides efficiently yet
-        // Correct implementation would iterate via multidimensional indices
-        // For contiguous (default) tensors, this is just a copy
-        // TODO: Optimize for non-contiguous views
         
         new_data.extend_from_slice(&*data);
         
@@ -219,5 +224,35 @@ impl Tensor {
     /// Sum all elements
     pub fn sum(&self) -> f64 {
         self.data.borrow().iter().sum()
+    }
+
+    /// Element-wise subtraction
+    pub fn sub(&self, other: &Tensor) -> Tensor {
+        assert_eq!(self.shape, other.shape, "Shape mismatch for sub");
+        let total_size: usize = self.shape.iter().product();
+        let mut result_data = Vec::with_capacity(total_size);
+        
+        let data_a = self.data.borrow();
+        let data_b = other.data.borrow();
+
+        for i in 0..total_size {
+            result_data.push(data_a[i] - data_b[i]);
+        }
+
+        Self::new(&result_data, &self.shape)
+    }
+
+    /// Element-wise mapping
+    pub fn map<F>(&self, f: F) -> Self 
+    where F: Fn(f64) -> f64 {
+        let total_size: usize = self.shape.iter().product();
+        let mut result_data = Vec::with_capacity(total_size);
+        let data = self.data.borrow();
+        
+        for i in 0..total_size {
+            result_data.push(f(data[i]));
+        }
+        
+        Self::new(&result_data, &self.shape)
     }
 }

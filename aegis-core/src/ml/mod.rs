@@ -42,6 +42,7 @@ pub use clustering::{
     AgglomerativeClustering, DBSCANResult, KMeans, KMeansResult, Linkage, DBSCAN,
 };
 pub use convergence::*;
-pub use linalg::{Matrix, Vector};
-pub use neural::{Activation, AdamParams, DenseLayer, TrainingResult, MLP};
+// pub use linalg::{Matrix, Vector}; // Removed
+pub use tensor::Tensor;
+pub use neural::{Activation, DenseLayer, TrainingResult, MLP, OptimizerConfig};
 pub use regressor::*;

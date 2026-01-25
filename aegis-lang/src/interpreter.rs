@@ -43,7 +43,7 @@ use std::vec::Vec;
 use crate::ast::*;
 use aegis_core::aether::{BlockMetadata, DriftDetector, HierarchicalBlockTree};
 use aegis_core::manifold::{ManifoldPoint, TimeDelayEmbedder};
-use aegis_core::ml::{MLP, KMeans, Activation};
+use aegis_core::ml::{MLP, KMeans, Activation, OptimizerConfig};
 use aegis_core::ml::convolution::Conv2D;
 use libm::{fabs, sqrt};
 
@@ -1192,7 +1192,7 @@ impl Interpreter {
             }
             NativeFunction::MlpNew => {
                  let lr = get_f64(args).unwrap_or(0.01);
-                 Ok(Value::Mlp(Box::new(MLP::new(lr))))
+                 Ok(Value::Mlp(Box::new(MLP::new(lr, OptimizerConfig::default()))))
             }
             NativeFunction::KMeansNew => {
                  let k = get_f64(args).unwrap_or(2.0) as usize;

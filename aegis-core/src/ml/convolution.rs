@@ -132,7 +132,7 @@ impl Conv2D {
                     }
 
                     // Activation
-                    *val_out = self.activation.apply(sum);
+                    *val_out = self.activation.apply_scalar(sum);
                 }
             }
         }
