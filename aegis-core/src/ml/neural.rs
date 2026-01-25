@@ -163,7 +163,7 @@ impl DenseLayer {
         }
         
         let weights = Tensor::new(&w_data, &[output_size, input_size]);
-        let biases = Tensor::zeros(&[output_size]);
+        let biases = Tensor::zeros(&[output_size, 1]);
 
         Self {
             weights,
