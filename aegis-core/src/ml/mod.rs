@@ -25,6 +25,8 @@ pub mod convergence;
 pub mod linalg;
 pub mod convolution;
 pub mod regressor;
+pub mod tensor;
+pub mod autograd;
 
 // Extended ML library
 pub mod classification;

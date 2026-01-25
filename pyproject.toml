@@ -26,7 +26,8 @@ classifiers = [
 python-source = "python"
 module-name = "aegis_lang"
 features = ["pyo3/extension-module"]
+manifest-path = "aegis-cli/Cargo.toml"
 
 [[tool.maturin.bin]]
 name = "aegis"
-path = "src/main.rs"
+path = "aegis-cli/src/main.rs"

@@ -28,4 +28,7 @@ check_output.txt
 test_output.txt
 
 # Docker
-.docker-compose.lock
+
+# Agents
+agents/
+
