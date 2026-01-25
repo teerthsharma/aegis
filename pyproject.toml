@@ -25,7 +25,7 @@ classifiers = [
 # Use the executable name 'aegis'
 python-source = "python"
 module-name = "aegis_lang"
-features = ["pyo3/extension-module"]
+
 
 manifest-path = "aegis-cli/Cargo.toml"
 package = "aegis-cli"
