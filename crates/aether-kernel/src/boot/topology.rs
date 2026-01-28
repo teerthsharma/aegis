@@ -42,7 +42,7 @@ impl HardwareTopology {
         // Calculate total memory
         boot_info.walk_memory_map(|region| {
             if region.kind == super::bios::MemoryRegionKind::Usable {
-                mem_total += region.end - region.start;
+                mem_total += region.end.0 - region.start.0;
             }
         });
         

@@ -1,6 +1,6 @@
 use core::iter::Iterator;
-use aether_core::PhysAddr;
-use multiboot2::{BootInformation, BootInformationHeader};
+use aether_core::os::PhysAddr;
+use multiboot2::{BootInformation, BootInformationHeader, MemoryAreaType};
 
 /// A region of physical memory.
 #[derive(Debug, Clone, Copy)]
@@ -33,7 +33,7 @@ pub struct Framebuffer {
 /// The interface that the BIOS/Bootloader must satisfy.
 /// Acts as the "DNA transcription" layer.
 pub trait BiosInterface {
-    /// Get the raw memory map iterator
+    // Get the raw memory map iterator
     // We use a simplified return type here as returning `impl Iterator` in traits is tricky in no_std without GATs/TAITs fully stabilized or boxing.
     // Ideally we'd return a custom iterator struct.
     // For simplicity, we'll let the caller get the raw iter via a method or just handle it here.
@@ -62,7 +62,7 @@ impl BootInfo {
 
     /// Access the raw multiboot information.
     fn raw(&self) -> Option<BootInformation> {
-        unsafe { multiboot2::load(self.multiboot_start as usize).ok() }
+        unsafe { BootInformation::load(self.multiboot_start.0 as *const BootInformationHeader).ok() }
     }
     
     /// Iterate over the memory map using a callback.
@@ -74,19 +74,14 @@ impl BootInfo {
             if let Some(tag) = info.memory_map_tag() {
                 for area in tag.memory_areas() {
                     f(MemoryRegion {
-                        start: area.start_address(),
-                        end: area.end_address(),
-                        // Fix: Match on the struct type, not the enum directly if it's wrapped, 
-                        // or assume direct enum match if `typ()` returns the enum.
-                        // The error said `typ()` returns `MemoryAreaTypeId`. 
-                        // We need to match against the ID or convert.
-                        // multiboot2 0.16+: `typ()` returns `MemoryAreaTypeId`.
-                        // We should map known IDs.
-                        kind: match area.typ() {
-                             multiboot2::MemoryAreaTypeId::AVAILABLE => MemoryRegionKind::Usable,
-                             multiboot2::MemoryAreaTypeId::RESERVED => MemoryRegionKind::Reserved,
-                             multiboot2::MemoryAreaTypeId::ACPI_AVAILABLE => MemoryRegionKind::Acpi,
-                             multiboot2::MemoryAreaTypeId::NVS => MemoryRegionKind::Reserved,
+                        start: PhysAddr(area.start_address()),
+                        end: PhysAddr(area.end_address()),
+                        // Match on raw type ID as enum variants are unstable across versions
+                        kind: match u32::from(area.typ()) {
+                             1 => MemoryRegionKind::Usable,
+                             2 => MemoryRegionKind::Reserved,
+                             3 => MemoryRegionKind::Acpi,
+                             4 => MemoryRegionKind::Reserved, // NVS
                              _ => MemoryRegionKind::Unknown,
                         }
                     });
@@ -97,15 +92,17 @@ impl BootInfo {
 
     pub fn framebuffer(&self) -> Option<Framebuffer> {
         let info = self.raw()?;
-        let tag = info.framebuffer_tag().ok()?; // Unwrap result
-        
-        Some(Framebuffer {
-            address: tag.address(),
-            width: tag.width(),
-            height: tag.height(),
-            pitch: tag.pitch(),
-            bpp: tag.bpp(),
-        })
+        if let Some(Ok(tag)) = info.framebuffer_tag() {
+            Some(Framebuffer {
+                address: PhysAddr(tag.address()),
+                width: tag.width(),
+                height: tag.height(),
+                pitch: tag.pitch(),
+                bpp: tag.bpp(),
+            })
+        } else {
+            None
+        }
     }
 
     pub fn config_root(&self) -> Option<PhysAddr> {
@@ -113,14 +110,16 @@ impl BootInfo {
         
         // Try RSDP (new ACPI)
         if let Some(tag) = info.rsdp_v2_tag() {
-            // Fix: signature() returns Result<&str, ...>, need to unwrap or handle
-             return Some(tag.signature().ok()?.as_ptr() as u64);
+            if let Ok(signature) = tag.signature() {
+                return Some(PhysAddr(signature.as_ptr() as u64));
+            }
         }
         
         // Try RSDP (old ACPI)
         if let Some(tag) = info.rsdp_v1_tag() {
-            // Similarly.
-            return None; // Placeholder
+            if let Ok(signature) = tag.signature() {
+                return Some(PhysAddr(signature.as_ptr() as u64));
+            }
         }
         
         // DTB not standard in multiboot2 usually (it's MBI), but we can look for it.

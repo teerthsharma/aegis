@@ -23,6 +23,8 @@ use alloc::string::String;
 #[cfg(not(feature = "std"))]
 use alloc::{format, vec};
 #[cfg(not(feature = "std"))]
+use alloc::vec::Vec;
+#[cfg(not(feature = "std"))]
 use alloc::string::ToString;
 
 #[cfg(not(feature = "std"))]

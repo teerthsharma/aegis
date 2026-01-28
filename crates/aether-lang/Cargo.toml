@@ -50,4 +50,4 @@ pyo3 = { version = "0.20", features = ["extension-module"], optional = true }
 [lib]
 name = "aether_lang"
 path = "src/lib.rs"
-crate-type = ["cdylib", "rlib"]
+crate-type = ["rlib"]

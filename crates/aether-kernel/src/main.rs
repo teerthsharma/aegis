@@ -46,7 +46,7 @@ fn kernel_main(boot_info_addr: u64) -> ! {
     
     // Construct BootInfo from the passed address (Multiboot2)
     // Safety: We assume the bootloader passed a valid address in rdi/first arg.
-    let boot_info = unsafe { aether_kernel::boot::bios::BootInfo::new(boot_info_addr) };
+    let boot_info = unsafe { aether_kernel::boot::bios::BootInfo::new(aether_core::os::PhysAddr(boot_info_addr)) };
     
     // Perform Bio-Scan
     let topology = aether_kernel::boot::topology::HardwareTopology::bio_scan(&boot_info);
