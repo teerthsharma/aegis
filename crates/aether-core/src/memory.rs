@@ -23,7 +23,7 @@ use std::vec::Vec;
 #[cfg(feature = "std")]
 use std::boxed::Box;
 
-use libm::{sqrt, fabs};
+use libm::sqrt;
 use core::marker::PhantomData;
 
 /// A Geometric Cell (Gc) handle.
@@ -355,12 +355,15 @@ pub struct ChebyshevGuard {
 impl ChebyshevGuard {
     pub fn calculate<T>(heap: &ManifoldHeap<T>) -> Self {
         let mut sum = 0.0;
+        let mut sum_sq = 0.0;
         let mut count = 0.0;
         
         for block in &heap.blocks {
              for i in 0..8 {
                  if (block.occupied_mask & (1 << i)) != 0 {
-                     sum += block.liveness[i];
+                     let val = block.liveness[i];
+                     sum += val;
+                     sum_sq += val * val;
                      count += 1.0;
                  }
              }
@@ -371,18 +374,8 @@ impl ChebyshevGuard {
         }
 
         let mean = sum / count;
-        
-        let mut sum_diff_sq = 0.0;
-         for block in &heap.blocks {
-             for i in 0..8 {
-                 if (block.occupied_mask & (1 << i)) != 0 {
-                     let diff = block.liveness[i] - mean;
-                     sum_diff_sq += diff * diff;
-                 }
-             }
-        }
-        
-        let variance = sum_diff_sq / count;
+        let variance = (sum_sq / count) - (mean * mean);
+        let variance = if variance < 0.0 { 0.0 } else { variance };
         
         Self {
             mean,
